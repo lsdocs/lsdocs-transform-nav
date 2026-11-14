@@ -44,7 +44,9 @@ use serde_json::{Map, Value, json};
 
 /// The plugin, as registered with the host.
 pub fn plugin() -> Plugin {
-    Plugin::new("transform-nav", env!("CARGO_PKG_VERSION")).transformer(Nav)
+    Plugin::new("transform-nav", env!("CARGO_PKG_VERSION"))
+        .transformer(Nav)
+        .cacheable()
 }
 
 /// The navigation transformer.
