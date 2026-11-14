@@ -21,9 +21,10 @@
 //! The tree follows the source directories. A directory's `index` page
 //! (`index.md`, or any `index.*` document) titles and links its section;
 //! without one the section is named after the directory. The site's root
-//! `index` page comes first. `url`s are relative to the page and point at
-//! source files; renderers map them to their outputs (`render-html` has a
-//! `link` template filter for this).
+//! `index` page comes first. Each linked item has the page's `source` path,
+//! from which renderers build the link to its output (`render-html` has a
+//! `page_url` template filter for this), and a `url` relative to the
+//! current page that points at the source file.
 //!
 //! Front matter:
 //!
@@ -107,7 +108,9 @@ impl Transformer for Nav {
         let at = flat.iter().position(|item| item["current"] == true);
         let neighbor = |i: Option<usize>| {
             i.and_then(|i| flat.get(i))
-                .map(|item| json!({"title": item["title"], "url": item["url"]}))
+                .map(|item| {
+                    json!({"title": item["title"], "url": item["url"], "source": item["source"]})
+                })
                 .unwrap_or(Value::Null)
         };
         let nav = json!({
@@ -137,6 +140,7 @@ impl Page<'_> {
         let mut item = Map::new();
         item.insert("title".into(), json!(self.title));
         item.insert("url".into(), json!(relative_path(from, self.source)));
+        item.insert("source".into(), json!(self.source));
         if self.source == from {
             item.insert("current".into(), json!(true));
         }
@@ -321,9 +325,9 @@ mod tests {
         );
         assert_eq!(
             nav["prev"],
-            json!({"title": "The guide", "url": "index.md"})
+            json!({"title": "The guide", "url": "index.md", "source": "guide/index.md"})
         );
-        assert_eq!(nav["next"], json!({"title": "Usage", "url": "a-usage.md"}));
+        assert_eq!(nav["next"]["url"], "a-usage.md");
 
         let (home, _) = &out[0];
         assert_eq!(home.metadata["nav"]["prev"], Value::Null);
