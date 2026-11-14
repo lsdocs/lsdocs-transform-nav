@@ -235,7 +235,7 @@ fn flatten<'v>(items: &'v [Value], out: &mut Vec<&'v Value>) {
     }
 }
 
-/// A directory name as a title: `getting-started` → `Getting started`.
+/// A directory name as a title: `getting-started` -> `Getting started`.
 fn pretty(name: &str) -> String {
     let spaced = name.replace(['-', '_'], " ");
     let mut chars = spaced.chars();
