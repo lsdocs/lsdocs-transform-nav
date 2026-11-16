@@ -202,13 +202,13 @@ impl<'a> Section<'a> {
                 Some(index) => index.item(from),
                 None => json!({ "title": pretty(name) }),
             };
-            let map = item.as_object_mut().expect("items are objects");
-            let open = map.contains_key("current") || children.iter().any(contains_current);
-            if open {
-                map.insert("open".into(), json!(true));
-            }
-            if !children.is_empty() {
-                map.insert("children".into(), Value::Array(children));
+            if let Some(map) = item.as_object_mut() {
+                if map.contains_key("current") || children.iter().any(contains_current) {
+                    map.insert("open".into(), json!(true));
+                }
+                if !children.is_empty() {
+                    map.insert("children".into(), Value::Array(children));
+                }
             }
             entries.push((dir.order(), name, item));
         }
@@ -253,6 +253,7 @@ fn pretty(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
     use super::*;
     use lsdocs_plugin_sdk::doctree::{Document, Heading, Node, text};
     use lsdocs_plugin_sdk::protocol::InitializeParams;
