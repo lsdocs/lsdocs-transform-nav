@@ -26,6 +26,11 @@
 //! `page_url` template filter for this), and a `url` relative to the
 //! current page that points at the source file.
 //!
+//! If the root `index` page lists its children (`nav_children`), the tree
+//! follows those lists instead: the root's children, each page's own
+//! children below it, and pages no list names left out. `sphinx-addons`
+//! fills `nav_children` from toctrees; front matter can set it too.
+//!
 //! Front matter:
 //!
 //! | Key | Meaning |
@@ -33,6 +38,7 @@
 //! | `nav_title` | Title in the navigation, instead of the page title. |
 //! | `nav_order` | Sort key among siblings; pages without one come after, by file name. |
 //! | `nav_exclude` | `true` leaves the page out of the navigation. |
+//! | `nav_children` | The pages below this one, in order: source paths relative to it, or to the source directory with a leading `/`. |
 
 use std::collections::BTreeMap;
 
@@ -73,6 +79,14 @@ impl Transformer for Nav {
                 "title": title,
                 "order": meta("nav_order").filter(|v| v.is_number()),
                 "exclude": meta("nav_exclude").and_then(Value::as_bool).unwrap_or(false),
+                "children": meta("nav_children")
+                    .and_then(Value::as_array)
+                    .map(|list| {
+                        list.iter()
+                            .filter_map(Value::as_str)
+                            .map(|path| absolute(&doc.source, path))
+                            .collect::<Vec<_>>()
+                    }),
             }),
             diagnostics: vec![],
         })
@@ -100,7 +114,26 @@ impl Transformer for Nav {
             })
             .unwrap_or_default();
         let tree = Section::build(&pages);
-        let mut items = tree.items(&document.source);
+        let listed = tree.index.and_then(|home| {
+            let collected = params.collected.as_object()?;
+            let children = collected.get(home.source)?["children"].as_array()?;
+            (!children.is_empty()).then_some(home)
+        });
+        let mut items = match (listed, params.collected.as_object()) {
+            (Some(home), Some(collected)) => {
+                let by_source: BTreeMap<&str, &Page> =
+                    pages.iter().map(|p| (p.source, p)).collect();
+                let mut seen = std::collections::BTreeSet::from([home.source]);
+                listed_items(
+                    home.source,
+                    collected,
+                    &by_source,
+                    &document.source,
+                    &mut seen,
+                )
+            }
+            _ => tree.items(&document.source),
+        };
         // The root index page leads, as the site's home.
         if let Some(home) = &tree.index {
             items.insert(0, home.item(&document.source));
@@ -225,6 +258,70 @@ impl<'a> Section<'a> {
     }
 }
 
+/// The items of the pages `parent` lists in `nav_children`, each with the
+/// pages it lists below it, seen from the page `from`. A page is listed
+/// once, where it is first named.
+fn listed_items<'a>(
+    parent: &str,
+    collected: &'a Map<String, Value>,
+    pages: &BTreeMap<&'a str, &Page<'a>>,
+    from: &str,
+    seen: &mut std::collections::BTreeSet<&'a str>,
+) -> Vec<Value> {
+    let mut items = Vec::new();
+    let children = collected
+        .get(parent)
+        .and_then(|p| p["children"].as_array())
+        .cloned()
+        .unwrap_or_default();
+    for child in children {
+        let Some(child) = child.as_str() else {
+            continue;
+        };
+        let Some((&source, page)) = pages.get_key_value(child) else {
+            continue;
+        };
+        if !seen.insert(source) {
+            continue;
+        }
+        let below = listed_items(source, collected, pages, from, seen);
+        let mut item = page.item(from);
+        if let Some(map) = item.as_object_mut()
+            && !below.is_empty()
+        {
+            if map.contains_key("current") || below.iter().any(contains_current) {
+                map.insert("open".into(), json!(true));
+            }
+            map.insert("children".into(), Value::Array(below));
+        }
+        items.push(item);
+    }
+    items
+}
+
+/// `path` as a source path: relative to the page `from`, or to the source
+/// directory with a leading `/`.
+fn absolute(from: &str, path: &str) -> String {
+    let joined = match path.strip_prefix('/') {
+        Some(rest) => rest.to_owned(),
+        None => match from.rsplit_once('/') {
+            Some((dir, _)) => format!("{dir}/{path}"),
+            None => path.to_owned(),
+        },
+    };
+    let mut parts: Vec<&str> = Vec::new();
+    for part in joined.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            part => parts.push(part),
+        }
+    }
+    parts.join("/")
+}
+
 fn contains_current(item: &Value) -> bool {
     item["current"] == true || item["open"] == true
 }
@@ -338,6 +435,42 @@ mod tests {
         // Excluded pages still get the navigation, but are not in it.
         let (secret, _) = &out[7];
         assert!(!secret.metadata["nav"].to_string().contains("Secret"));
+    }
+
+    #[tokio::test]
+    async fn listed_children_replace_the_directories() {
+        let docs = vec![
+            doc(
+                "index.md",
+                "Home",
+                json!({"nav_children": ["guide/intro.md", "/about.md", "about.md"]}),
+            ),
+            doc("about.md", "About", json!({})),
+            doc(
+                "guide/intro.md",
+                "Intro",
+                json!({"nav_children": ["../ref/deep.md", "missing.md"]}),
+            ),
+            doc("ref/deep.md", "Deep", json!({})),
+            doc("unlisted.md", "Unlisted", json!({})),
+        ];
+        let out = testing::run_transform(&plugin(), &InitializeParams::default(), docs)
+            .await
+            .unwrap();
+        let (deep, _) = &out[3];
+        let mut lines = Vec::new();
+        outline(&deep.metadata["nav"]["items"], 0, &mut lines);
+        assert_eq!(
+            lines,
+            [
+                "Home(../index.md)",
+                "Intro(../guide/intro.md)+",
+                "  Deep(deep.md)*",
+                "About(../about.md)",
+            ]
+        );
+        assert_eq!(deep.metadata["nav"]["prev"]["title"], "Intro");
+        assert_eq!(deep.metadata["nav"]["next"]["title"], "About");
     }
 
     #[test]
