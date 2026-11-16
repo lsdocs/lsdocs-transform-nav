@@ -89,6 +89,7 @@ impl Transformer for Nav {
                     }),
             }),
             diagnostics: vec![],
+            dependencies: vec![],
         })
     }
 
@@ -157,6 +158,7 @@ impl Transformer for Nav {
         Ok(TransformApplyResult {
             document,
             diagnostics: vec![],
+            dependencies: vec![],
         })
     }
 }
