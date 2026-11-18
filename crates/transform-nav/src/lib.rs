@@ -356,7 +356,6 @@ mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
     use lsdocs_plugin_sdk::doctree::{Document, Heading, Node, text};
-    use lsdocs_plugin_sdk::protocol::InitializeParams;
     use lsdocs_plugin_sdk::testing;
 
     fn doc(source: &str, title: &str, front: Value) -> Document {
@@ -405,7 +404,7 @@ mod tests {
             doc("reference/getting-started/cli.md", "CLI", json!({})),
             doc("secret.md", "Secret", json!({"nav_exclude": true})),
         ];
-        let out = testing::run_transform(&plugin(), &InitializeParams::default(), docs)
+        let out = testing::run_transform(&plugin(), &lsdocs_plugin_sdk::Setup::default(), docs)
             .await
             .unwrap();
         let (install, _) = &out[3];
@@ -457,7 +456,7 @@ mod tests {
             doc("ref/deep.md", "Deep", json!({})),
             doc("unlisted.md", "Unlisted", json!({})),
         ];
-        let out = testing::run_transform(&plugin(), &InitializeParams::default(), docs)
+        let out = testing::run_transform(&plugin(), &lsdocs_plugin_sdk::Setup::default(), docs)
             .await
             .unwrap();
         let (deep, _) = &out[3];
