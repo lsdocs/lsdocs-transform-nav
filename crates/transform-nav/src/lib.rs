@@ -43,7 +43,8 @@
 use std::collections::BTreeMap;
 
 use lsdocs_plugin_sdk::protocol::{
-    TransformApplyParams, TransformApplyResult, TransformCollectParams, TransformCollectResult,
+    ParseTransformEachParams, ParseTransformEachResult, RenderTransformEachParams,
+    RenderTransformEachResult,
 };
 use lsdocs_plugin_sdk::{Context, Plugin, PluginResult, Transformer, relative_path};
 use serde_json::{Map, Value, json};
@@ -60,13 +61,13 @@ pub fn plugin() -> Plugin {
 pub struct Nav;
 
 impl Transformer for Nav {
-    const COLLECTS: bool = true;
+    const READS: bool = true;
 
-    async fn collect(
+    async fn read(
         &self,
-        params: TransformCollectParams,
+        params: ParseTransformEachParams,
         _ctx: &Context,
-    ) -> PluginResult<TransformCollectResult> {
+    ) -> PluginResult<ParseTransformEachResult> {
         let doc = &params.document;
         let meta = |key: &str| doc.metadata.get(key);
         let title = meta("nav_title")
@@ -74,7 +75,7 @@ impl Transformer for Nav {
             .map(str::to_owned)
             .or_else(|| doc.title())
             .unwrap_or_else(|| doc.source.clone());
-        Ok(TransformCollectResult {
+        Ok(ParseTransformEachResult {
             data: json!({
                 "title": title,
                 "order": meta("nav_order").filter(|v| v.is_number()),
@@ -95,9 +96,9 @@ impl Transformer for Nav {
 
     async fn apply(
         &self,
-        params: TransformApplyParams,
+        params: RenderTransformEachParams,
         _ctx: &Context,
-    ) -> PluginResult<TransformApplyResult> {
+    ) -> PluginResult<RenderTransformEachResult> {
         let mut document = params.document;
         let pages = params
             .collected
@@ -155,7 +156,7 @@ impl Transformer for Nav {
             "next": neighbor(at.map(|i| i + 1)),
         });
         document.metadata.insert("nav".into(), nav);
-        Ok(TransformApplyResult {
+        Ok(RenderTransformEachResult {
             document,
             diagnostics: vec![],
             dependencies: vec![],
